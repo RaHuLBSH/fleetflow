@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import { AppError } from "../../middleware/errorHandler.js";
 import { authenticateSession, createSession, csrfMatches, hashPassword, hashToken, revokeSession, safeUserForMembership, switchSessionOrganization, verifyCredentials } from "./auth.service.js";
-import { requireAuthentication, requireCsrf, requireRole } from "./auth.middleware.js";
+import { requireAuthentication, requireCsrf, requireRole, requireTrustedOrigin } from "./auth.middleware.js";
 import { env } from "../../config/env.js";
 import { User } from "./user.model.js";
 import { OrganizationInvitation, OrganizationMembership, invitedRoles } from "../organizations/models.js";
@@ -21,8 +21,12 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   return result.data;
 }
 
-const cookieOptions = (expires: Date) => ({ httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, expires, path: "/api" });
-const csrfCookieOptions = (expires: Date) => ({ httpOnly: false, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, expires, path: "/api" });
+// Production frontend and API are commonly hosted on different sites. Browsers
+// only send credential cookies in that topology when SameSite=None and Secure.
+// The explicit Origin allowlist and per-request CSRF token protect state changes.
+const sameSite = process.env.NODE_ENV === "production" ? "none" as const : "strict" as const;
+const cookieOptions = (expires: Date) => ({ httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite, expires, path: "/api" });
+const csrfCookieOptions = (expires: Date) => ({ httpOnly: false, secure: process.env.NODE_ENV === "production", sameSite, expires, path: "/api" });
 
 export const authRouter = Router();
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { success: false, error: { code: "RATE_LIMITED", message: "Too many login attempts; try again later" } } });
@@ -43,7 +47,7 @@ authRouter.post("/login", loginLimiter, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-authRouter.post("/logout", requireAuthentication, requireCsrf, async (req, res, next) => {
+authRouter.post("/logout", requireAuthentication, requireTrustedOrigin, async (req, res, next) => {
   try {
     await revokeSession(req.cookies?.fleetflow_session);
     res.clearCookie("fleetflow_session", { path: "/api" });

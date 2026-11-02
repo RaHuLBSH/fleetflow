@@ -23,8 +23,22 @@ export function requireRole(...roles: UserRole[]) {
 }
 
 export function requireCsrf(req: Request, _res: Response, next: NextFunction) {
-  const origin = req.get("origin");
-  if (origin && !env.allowedOrigins.includes(origin)) return next(new AppError(403, "CSRF_REJECTED", "Request origin is not allowed"));
+  const originError = rejectUntrustedOrigin(req);
+  if (originError) return next(originError);
   if (!req.auth || !csrfMatches(req.get("x-csrf-token"), req.auth.csrfTokenHash)) return next(new AppError(403, "CSRF_REJECTED", "CSRF validation failed"));
   next();
+}
+
+// Logging out only revokes the caller's own session. A trusted-Origin check is
+// sufficient here and avoids trapping users in a session when their CSRF token
+// has gone stale in a tab.
+export function requireTrustedOrigin(req: Request, _res: Response, next: NextFunction) {
+  const originError = rejectUntrustedOrigin(req);
+  if (originError) return next(originError);
+  next();
+}
+
+function rejectUntrustedOrigin(req: Request): AppError | undefined {
+  const origin = req.get("origin");
+  if (origin && !env.allowedOrigins.includes(origin)) return new AppError(403, "CSRF_REJECTED", "Request origin is not allowed");
 }

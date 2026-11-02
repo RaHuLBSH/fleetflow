@@ -56,7 +56,7 @@ This endpoint does not necessarily prove MongoDB or Redis is ready. Add a separa
 
 ## 3. Authentication endpoints
 
-FleetFlow uses opaque, random session tokens. The token is stored only in a Secure (production), HttpOnly, SameSite=Strict cookie; the database stores only its SHA-256 hash. Sessions expire after `SESSION_TTL_DAYS` and can be revoked on logout. A separate SameSite=Strict CSRF token is required in `X-CSRF-Token` for authenticated state-changing requests. Requests with an unapproved `Origin` are rejected. Each session has an active organization; its role is resolved from the user's membership in that organization.
+FleetFlow uses opaque, random session tokens. The token is stored only in a Secure (production), HttpOnly cookie; the database stores only its SHA-256 hash. Cookies use SameSite=Strict in development and SameSite=None in production so a separately hosted frontend can send credentials to the API. Sessions expire after `SESSION_TTL_DAYS` and can be revoked on logout. Authenticated state-changing requests require a CSRF token in `X-CSRF-Token`; logout instead requires an authenticated session and an approved `Origin`, since it only revokes the caller's own session. Requests with an unapproved `Origin` are rejected. Set `FRONTEND_ORIGIN` to the exact deployed frontend origin; each session has an active organization and its role is resolved from the user's membership in that organization.
 
 Public registration is intentionally not implemented. Organization admins invite dispatchers and drivers with a single-use invitation. New invitees set their own password when accepting; existing accounts must authenticate before accepting. Regular invitations cannot grant the admin role.
 
