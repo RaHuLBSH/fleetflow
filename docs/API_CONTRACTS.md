@@ -56,15 +56,24 @@ This endpoint does not necessarily prove MongoDB or Redis is ready. Add a separa
 
 ## 3. Authentication endpoints
 
-FleetFlow uses opaque, random session tokens. The token is stored only in a Secure (production), HttpOnly, SameSite=Strict cookie; the database stores only its SHA-256 hash. Sessions expire after `SESSION_TTL_DAYS` and can be revoked on logout. A separate SameSite=Strict CSRF token is required in `X-CSRF-Token` for authenticated state-changing requests. Requests with an unapproved `Origin` are rejected.
+FleetFlow uses opaque, random session tokens. The token is stored only in a Secure (production), HttpOnly, SameSite=Strict cookie; the database stores only its SHA-256 hash. Sessions expire after `SESSION_TTL_DAYS` and can be revoked on logout. A separate SameSite=Strict CSRF token is required in `X-CSRF-Token` for authenticated state-changing requests. Requests with an unapproved `Origin` are rejected. Each session has an active organization; its role is resolved from the user's membership in that organization.
 
-Public registration is intentionally not implemented. An authenticated administrator provisions accounts with `POST /api/auth/users`; the server derives the new account's organization from the administrator's session and accepts only the documented roles.
+Public registration is intentionally not implemented. Organization admins invite dispatchers and drivers with a single-use invitation. New invitees set their own password when accepting; existing accounts must authenticate before accepting. Regular invitations cannot grant the admin role.
 
 - `POST /api/auth/login` — verify credentials and establish a session.
 - `POST /api/auth/logout` — revoke the current session/refresh credential.
 - `GET /api/auth/me` — return the current authenticated user's safe profile.
+- `GET /api/auth/organizations` — list active memberships and the current organization.
+- `POST /api/auth/switch-organization` — switch the session to one of the caller's active memberships; requires CSRF.
+- `POST /api/auth/invitations` — admin-only invitation for `dispatcher` or `driver`; returns a copyable one-time link.
+- `POST /api/auth/invitations/accept` — accept an invitation; new users provide name/password, existing users must authenticate with the invited account.
 
-Never accept a client-supplied role or organization ID as proof of permission. Public registration should not allow users to grant themselves administrator access.
+The login identity is global and unique by normalized email. Roles belong to `OrganizationMembership`, not the global user. Switching changes the session's active organization and effective role. Every API and socket request must derive tenant and role from the verified membership. Never accept client-supplied role or organization ID as proof of permission. Organization creation remains controlled provisioning.
+
+Role permissions within the active organization:
+- **Admin:** manage tenant shipments, drivers, vehicles, members, and organization settings; cannot access a tenant without membership or invite another admin through the member UI.
+- **Dispatcher:** manage shipments and operational driver/vehicle records, assignments, tracking, alerts, and AI reviews; cannot manage users, memberships, or organization settings.
+- **Driver:** view only assigned shipments/history/tracking and submit permitted status/location updates for an active assignment; cannot access organization-wide records or manage resources/users/settings.
 
 ## 4. Shipments
 

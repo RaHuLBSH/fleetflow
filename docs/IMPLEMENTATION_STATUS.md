@@ -4,7 +4,7 @@
 
 ## Current milestone
 
-**Milestone 5 — UI fidelity and integration audit** (screens and API wiring implemented; browser-level flows and the latest backend test run could not be verified in this sandbox)
+**Multi-organization RBAC foundation — in progress** (membership migration and admin invitation UI are implemented in source; migration/live verification is pending Atlas connectivity; Socket.IO, BullMQ, and AI implementation is blocked pending package access)
 
 ## Status summary
 
@@ -22,6 +22,8 @@
 - [x] Screenshot-referenced dispatcher screens implemented in React
 - [x] Shipment, driver, vehicle, shipment-event API integrations connected in the frontend
 - [x] Repeatable, tenant-scoped Atlas demo seed command implemented and verified (6 drivers, 6 vehicles, 7 shipments, 22 events inserted; repeat created no duplicates)
+- [ ] Global user identities, per-organization memberships, invitation flow, and session organization switching (implementation added; migration and HTTP tests not yet verified)
+- [ ] Admin-only member invitation UI and organization selector (implementation added; frontend checks pass; end-to-end flow awaits migration)
 - [x] Prototype-only map, analytics, insights, and settings labeled as non-persisted sample/session data
 - [ ] Socket.IO tracking implemented and tested
 - [ ] Delay detection and background jobs implemented and tested
@@ -82,8 +84,8 @@ Node used for these commands: **nvm Node v24.0.2** (`/home/rahul/.nvm/versions/n
 - CORS allows `FRONTEND_ORIGIN` (default `http://localhost:5173`) and the matching `127.0.0.1` alias so local Vite/Chrome origin differences do not fail the health check.
 - Helmet `crossOriginResourcePolicy` is set to `cross-origin` so the browser can read API responses from the Vite origin.
 - Mongoose connects before the API starts. `MONGODB_URI` is required; startup fails safely if it is absent or unreachable.
-- User accounts are tenant-scoped by `organizationId`. Normalized email is unique per organization, and all account provisioning derives the organization from the authenticated admin rather than request input.
-- Public registration is disabled. Initial administrators are provisioned locally with `npm run provision:admin`, using `PROVISION_ORGANIZATION_ID`, `PROVISION_ADMIN_NAME`, `PROVISION_ADMIN_EMAIL`, and `PROVISION_ADMIN_PASSWORD` from a non-committed `.env`; existing organization admins use `POST /api/auth/users`.
+- User identities are global with globally unique normalized email. Roles and tenant access are stored in active organization memberships; the authenticated session carries its current organization.
+- Public registration is disabled. Initial organization admins are provisioned locally with `npm run provision:admin`, using `PROVISION_ORGANIZATION_ID`, `PROVISION_ORGANIZATION_NAME`, `PROVISION_ADMIN_NAME`, `PROVISION_ADMIN_EMAIL`, and `PROVISION_ADMIN_PASSWORD` from a non-committed `.env`. Organization admins invite dispatchers and drivers through the authenticated invite API.
 - Authentication uses opaque 256-bit session tokens in HttpOnly, SameSite=Strict cookies (Secure in production). Only SHA-256 token hashes, CSRF-token hashes, expiry, and revocation data persist. Logout revokes the session. Cookie-authenticated writes require `X-CSRF-Token` and reject unknown `Origin` values.
 
 ## Changed files (Milestone 3)
@@ -138,9 +140,45 @@ Existing `app/backend/tsconfig.json` and frontend Vite/TypeScript configs were l
 
 ## Next task
 
-1. Continue end-to-end dispatcher and driver UI verification against Atlas, including assignment and permitted driver status updates.
-2. Verify MongoDB indexes and persistence behavior for logistics models.
-3. Begin GPS/tracking only when the real-time milestone is scheduled; demo records do not represent live locations.
+1. Restore Atlas connectivity, run `npm run migrate:organizations` dry-run, resolve any duplicate emails, then review and explicitly apply with `npm run migrate:organizations -- --apply`.
+2. Re-run backend HTTP tests and complete dispatcher/driver live workflows after the migration.
+3. Install the requested Socket.IO/BullMQ packages once registry access is approved and configure hosted Redis/OpenRouter runtime secrets before their live verification.
+
+## Organization membership and role-aware UI — in progress
+
+- The login form remains shared. Safe user context now carries the active organization's role and the memberships available for switching; navigation exposes Members and Settings to admins only.
+- Global `User` identities are now modeled separately from `OrganizationMembership`. Each membership owns its role. Sessions carry `activeOrganizationId`; API role/tenant context is resolved from that membership.
+- `GET /api/auth/organizations` and CSRF-protected `POST /api/auth/switch-organization` are implemented. Switching rejects organizations without an active membership.
+- Admins can create copyable, seven-day invitations for dispatchers/drivers. Invitees set their own password; existing users must authenticate as the invited email. The invitation schema does not allow admin-role grants.
+- Accepting an invitation for an existing account now requires that account's valid session and CSRF token; requests with an untrusted Origin are rejected.
+- Added `npm run migrate:organizations`. It is dry-run by default, checks for duplicate global emails and invalid legacy roles, preserves user IDs, and creates tenant organizations/memberships before removing legacy `User.organizationId`/`role`. API startup refuses to serve legacy users until migration is applied.
+- No database migration was run. Atlas connection attempt failed with a Mongoose server-selection error, so no integration fixtures or schema writes were made in this task.
+
+### Verification for this task
+
+| Command/action | Result | Notes |
+|---|---|---|
+| Backend `npm run typecheck` (Node 24.0.2) | Passed | Re-run 2026-11-01 after invitation CSRF guard |
+| Backend `npm run build` (Node 24.0.2) | Passed | Re-run 2026-11-01 after invitation CSRF guard |
+| Frontend `npm run typecheck`, `npm run build`, `npm run lint` (Node 24.0.2) | Passed | Re-run 2026-11-01; Vite production build transformed 34 modules |
+| Backend focused migration + demo seed tests | Passed: 10 tests | Pure unit tests; no MongoDB connection; earlier run |
+| Backend `npm test` (Node 24.0.2) | Failed to execute HTTP test files in sandbox | 2026-11-01. Auth and logistics HTTP test files fail at process startup while binding local ports; migration and demo seed test files pass. The new existing-account invitation CSRF test is present but not verified by a successful HTTP suite run. |
+| Full backend `npm test` | Not clean: 16/22 passed in latest completed run | Six HTTP tests failed while mocks were being updated for membership and invitation behavior. A fix for the logistics `User.updateOne` mock was made afterward; the next run was declined. The invitation acceptance test still needs a verified passing run. |
+| Live Atlas workflow/migration | Not run | Connection returned a Mongoose server-selection error. No DB mutation occurred. |
+| Socket.IO/BullMQ dependency installation | Blocked | Approval review rejected the `npm install socket.io bullmq` request. These packages are not installed, and tracking, queue workers, and AI analysis have not been implemented. |
+| Redis/OpenRouter live configuration | Not available | No Redis/OpenRouter variable names are configured in the backend `.env`; its values were not displayed. No live service calls were attempted. |
+
+Known migration limitation: duplicate emails across legacy organizations intentionally stop the migration. Resolve identities explicitly before applying; the migration never merges accounts automatically. The integration-only live dispatcher/driver dataset was not created because Atlas was unreachable.
+
+### Remaining work from the roles/tracking/AI plan
+
+- The per-organization identity, membership, switching, invitation APIs, admin Members screen, and role-aware navigation are implemented, but the organization migration remains unapplied. Do not treat production or Atlas authorization as migrated until the dry-run is reviewed and the explicit apply command succeeds.
+- The dispatcher-to-driver live workflow and live cross-organization denial have not been run against MongoDB in this task. Previous seed verification remains recorded above; it does not verify the new membership schema.
+- Socket.IO location ingestion, persisted current/history locations, 30-day retention, Redis/BullMQ delay analysis, alert delivery, OpenRouter analysis, and human review endpoints are not implemented. The package installation needed to begin those portions was rejected by the approval review.
+- The existing Fleet map and AI Insights remain labeled prototype/sample data; do not present them as live tracking or operational AI.
+- Before resuming: restore Atlas connectivity and inspect the migration dry-run; verify auth tests in an environment that permits ephemeral localhost listeners; then install the approved Socket.IO/BullMQ dependencies and implement tracking, worker, and AI milestones.
+
+Changed files include `app/backend/src/modules/organizations/`, `app/backend/src/modules/auth/`, `app/backend/src/scripts/migrateOrganizations.ts`, `app/frontend/src/App.tsx`, `app/frontend/src/pages/MembersPage.tsx`, `app/frontend/src/pages/AcceptInvitation.tsx`, `docs/API_CONTRACTS.md`, and `docs/DATA_MODEL.md`.
 
 ## MongoDB Atlas demo-data seeding
 

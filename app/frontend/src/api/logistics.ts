@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "../config";
 
-export type User = { id: string; name: string; email: string; role: "admin" | "dispatcher" | "driver" };
+export type User = { id: string; name: string; email: string; role: "admin" | "dispatcher" | "driver"; organizationId: string; organizationName: string; organizations: Array<{ id: string; name: string; role: "admin" | "dispatcher" | "driver" }> };
 export type Shipment = { id: string; reference: string; customerName?: string; origin: { address: string }; destination: { address: string }; status: string; assignedDriverId?: string; assignedVehicleId?: string; scheduledPickupAt?: string; expectedDeliveryAt?: string; createdAt?: string };
 export type Resource = { id: string; name?: string; phone?: string; userId?: string; registrationNumber?: string; capacityKg?: number; availability?: string; status?: string };
 let csrfToken = "";
@@ -35,6 +35,17 @@ export const login = async (email: string, password: string) => {
   setCsrfToken(body.data.csrfToken); return body.data.user;
 };
 export const me = () => api<{ user: User }>("/auth/me");
+export const switchOrganization = (organizationId: string) => api<{ user: User }>("/auth/switch-organization", { method: "POST", body: JSON.stringify({ organizationId }) });
+export const inviteMember = (input: { email: string; role: "dispatcher" | "driver" }) => api<{ invitation: { id: string; email: string; role: "dispatcher" | "driver"; expiresAt: string }; invitationUrl: string }>("/auth/invitations", { method: "POST", body: JSON.stringify(input) });
+export async function acceptInvitation(input: { token: string; name?: string; password?: string }) {
+  const headers = new Headers({ "content-type": "application/json" });
+  if (csrfToken) headers.set("x-csrf-token", csrfToken);
+  const response = await fetch(`${API_BASE_URL}/api/auth/invitations/accept`, { method: "POST", credentials: "include", headers, body: JSON.stringify(input) });
+  const body = await response.json() as { success: boolean; data?: { user: User; csrfToken?: string }; error?: { message?: string } };
+  if (!response.ok || !body.data) throw new Error(body.error?.message ?? `Request failed (${response.status})`);
+  if (body.data.csrfToken) setCsrfToken(body.data.csrfToken);
+  return body.data.user;
+}
 export const logout = () => api<{ loggedOut: boolean }>("/auth/logout", { method: "POST" });
 export type ShipmentEvent = { id: string; type: string; occurredAt: string; payload?: Record<string, unknown> };
 export async function listShipments(options: { page?: number; limit?: number; status?: string; search?: string } = {}) {

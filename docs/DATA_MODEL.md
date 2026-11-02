@@ -18,10 +18,26 @@ type UserRole = "admin" | "dispatcher" | "driver";
 
 interface User {
   _id: ObjectId;
-  organizationId: ObjectId;
   name: string;
-  email: string;          // normalized; unique within chosen scope
+  email: string;          // normalized; globally unique login identity
   passwordHash: string;
+  isActive: boolean;
+  lastOrganizationId?: ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+User is a global login identity. Organization-specific roles and access are stored in OrganizationMembership. Email has a global unique index.
+
+## 1a. Organization and membership
+
+```ts
+interface Organization { _id: ObjectId; name: string; region?: string; timeZone?: string; }
+interface OrganizationMembership {
+  _id: ObjectId;
+  organizationId: ObjectId;
+  userId: ObjectId;
   role: UserRole;
   isActive: boolean;
   createdAt: Date;
@@ -29,7 +45,25 @@ interface User {
 }
 ```
 
-FleetFlow permits the same normalized email in different organizations. It enforces a unique compound index on `organizationId + email`.
+Enforce unique `organizationId + userId`. A session's active organization must resolve to an active membership before tenant data is accessible.
+
+## 1b. Organization invitation
+
+```ts
+interface OrganizationInvitation {
+  _id: ObjectId;
+  organizationId: ObjectId;
+  email: string;
+  role: "dispatcher" | "driver";
+  tokenHash: string;
+  invitedBy: ObjectId;
+  expiresAt: Date;
+  acceptedAt?: Date;
+  revokedAt?: Date;
+}
+```
+
+Store only a hash of the single-use invitation token. Invitations expire after seven days; the admin member UI cannot grant admin membership.
 
 ## 2. Driver
 
