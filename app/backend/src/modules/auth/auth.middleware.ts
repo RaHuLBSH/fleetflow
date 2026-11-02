@@ -4,12 +4,12 @@ import { AppError } from "../../middleware/errorHandler.js";
 import { authenticateSession, csrfMatches, toSafeUser, type SafeUser } from "./auth.service.js";
 import type { UserRole } from "./user.model.js";
 
-declare global { namespace Express { interface Request { auth?: { user: SafeUser; csrfTokenHash: string }; } } }
+declare global { namespace Express { interface Request { auth?: { user: SafeUser; csrfTokenHash: string; sessionId: import("mongoose").Types.ObjectId }; } } }
 
 export async function requireAuthentication(req: Request, _res: Response, next: NextFunction) {
   try {
-    const { user, session } = await authenticateSession(req.cookies?.fleetflow_session);
-    req.auth = { user: toSafeUser(user), csrfTokenHash: session.csrfTokenHash };
+    const { user, session, membership, organization, memberships } = await authenticateSession(req.cookies?.fleetflow_session);
+    req.auth = { user: toSafeUser(user, membership, organization, memberships), csrfTokenHash: session.csrfTokenHash, sessionId: session._id };
     next();
   } catch (error) { next(error); }
 }

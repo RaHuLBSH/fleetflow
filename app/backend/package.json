@@ -8,9 +8,11 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/modules/auth/auth.test.ts src/modules/logistics/logistics.test.ts src/scripts/*.test.ts",
+    "test": "node --import tsx --test src/modules/*/*.test.ts src/scripts/*.test.ts",
+    "migrate:organizations": "tsx src/scripts/migrateOrganizations.ts",
     "provision:admin": "tsx src/scripts/provisionAdmin.ts",
-    "seed:demo": "tsx src/scripts/demoSeed.ts"
+    "seed:demo": "tsx src/scripts/demoSeed.ts",
+    "seed:dev": "tsx src/scripts/seedDevelopment.ts"
   },
   "keywords": [],
   "author": "",

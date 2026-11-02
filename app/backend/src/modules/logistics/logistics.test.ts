@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import { createApp } from "../../app.js";
 import { Session } from "../auth/session.model.js";
 import { User } from "../auth/user.model.js";
+import { Organization, OrganizationMembership } from "../organizations/models.js";
 import { Driver, Shipment, ShipmentEvent, Vehicle } from "./models.js";
 
 const org = new mongoose.Types.ObjectId(); const otherOrg = new mongoose.Types.ObjectId(); const userId = new mongoose.Types.ObjectId();
@@ -18,8 +19,11 @@ async function request(path: string, options: RequestInit = {}) { const server =
 
 test.before(async () => {
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-  (User as any).findOne = () => ({ select: async () => ({ _id: userId, organizationId: org, name: "Dispatcher", email: "dispatcher@test.local", role: "dispatcher", passwordHash, isActive: true }) });
-  (User as any).findById = async () => ({ _id: userId, organizationId: org, name: "Dispatcher", email: "dispatcher@test.local", role: "dispatcher", isActive: true });
+  (User as any).findOne = () => ({ select: async () => ({ _id: userId, name: "Dispatcher", email: "dispatcher@test.local", passwordHash, isActive: true }) });
+  (User as any).findById = async () => ({ _id: userId, name: "Dispatcher", email: "dispatcher@test.local", isActive: true });
+  (User as any).updateOne = async () => ({ modifiedCount: 1 });
+  (OrganizationMembership as any).find = () => ({ sort: () => ({ lean: async () => [{ userId, organizationId: org, role: "dispatcher", isActive: true }] }) });
+  (Organization as any).find = () => ({ select: () => ({ lean: async () => [{ _id: org, name: "Test organization" }] }) });
   (Session as any).create = async (data: any) => { sessionMap.set(data.tokenHash, { _id: new mongoose.Types.ObjectId(), ...data, revokedAt: null }); };
   (Session as any).findOne = (query: any) => ({ select: async () => sessionMap.get(query.tokenHash) ?? null });
   (Shipment as any).create = async (data: any) => { const doc = responseDoc({ _id: shipmentId, ...data, status: "created" }); shipments.set(shipmentId.toString(), doc); return doc; };
@@ -34,7 +38,7 @@ test.before(async () => {
 
 async function dispatcherRequest(path: string, method: string, body: unknown) {
   const login = await request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "dispatcher@test.local", password }) });
-  const cookies = login.headers.getSetCookie().map((v) => v.split(";", 1)[0]).join("; "); const csrf = (await login.json() as any).data.csrfToken;
+  const cookies = login.headers.getSetCookie().map((v) => v.split(";", 1)[0]).join("; "); const loginBody = await login.json() as any; assert.equal(login.status, 200, JSON.stringify(loginBody)); const csrf = loginBody.data.csrfToken;
   return request(path, { method, headers: { "content-type": "application/json", cookie: cookies, "x-csrf-token": csrf }, body: JSON.stringify(body) });
 }
 
